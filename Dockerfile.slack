@@ -1,0 +1,31 @@
+# Use Python 3.10 as base image
+FROM python:3.10-slim
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements file
+COPY src/backend/requirements.txt .
+
+# Copy the Zscaler certificate into the Docker image 
+COPY zscaler.crt /usr/local/share/ca-certificates/zscaler.crt
+
+# Establish trust between the container and the Zscaler CA
+RUN apt-get update && apt-get install -y ca-certificates && \
+    cat /usr/local/share/ca-certificates/zscaler.crt >> /etc/ssl/certs/ca-certificates.crt && \
+    update-ca-certificates
+
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir slack-bolt
+
+# Copy application code
+COPY src/integrations/slack /app/src/integrations/slack
+COPY config /app/config
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV CONFIG_PATH=/app/config/config.yaml
+
+# Run the Slack bot with correct module path
+CMD ["python", "-m", "src.integrations.slack.slack_bot"]

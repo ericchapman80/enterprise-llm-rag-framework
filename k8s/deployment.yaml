@@ -1,0 +1,182 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-llm-backend
+  labels:
+    app: rag-llm-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rag-llm-backend
+  template:
+    metadata:
+      labels:
+        app: rag-llm-backend
+    spec:
+      containers:
+      - name: rag-llm-backend
+        image: ${DOCKER_REGISTRY}/rag-llm-backend:latest
+        ports:
+        - containerPort: 8000
+        env:
+        - name: GITHUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: rag-llm-secrets
+              key: github-token
+        - name: SLACK_BOT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: rag-llm-secrets
+              key: slack-bot-token
+        - name: SLACK_APP_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: rag-llm-secrets
+              key: slack-app-token
+        - name: SLACK_SIGNING_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: rag-llm-secrets
+              key: slack-signing-secret
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app/config
+        - name: data-volume
+          mountPath: /app/data
+      volumes:
+      - name: config-volume
+        configMap:
+          name: rag-llm-config
+      - name: data-volume
+        persistentVolumeClaim:
+          claimName: rag-llm-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-llm-backend
+spec:
+  selector:
+    app: rag-llm-backend
+  ports:
+  - port: 8000
+    targetPort: 8000
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama
+  labels:
+    app: ollama
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ollama
+  template:
+    metadata:
+      labels:
+        app: ollama
+    spec:
+      containers:
+      - name: ollama
+        image: ollama/ollama:latest
+        ports:
+        - containerPort: 11434
+        volumeMounts:
+        - name: ollama-data
+          mountPath: /root/.ollama
+        resources:
+          limits:
+            memory: 8Gi
+            cpu: "4"
+          requests:
+            memory: 4Gi
+            cpu: "2"
+      volumes:
+      - name: ollama-data
+        persistentVolumeClaim:
+          claimName: ollama-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama
+spec:
+  selector:
+    app: ollama
+  ports:
+  - port: 11434
+    targetPort: 11434
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rag-llm-data-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ollama-data-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rag-llm-config
+data:
+  config.yaml: |
+    
+    llm:
+      ollama:
+        base_url: http://ollama:11434
+        model_name: llama2
+        parameters:
+          temperature: 0.7
+          top_p: 0.9
+          max_tokens: 2048
+    
+    embeddings:
+      model_name: all-MiniLM-L6-v2
+      vector_db_path: ./data/chroma_db
+    
+    api:
+      host: 0.0.0.0
+      port: 8000
+      cors_origins:
+        - "*"
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: rag-llm-ingress
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  rules:
+  - host: rag-llm.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: rag-llm-backend
+            port:
+              number: 8000

@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.backend.name }}
+  labels:
+    app: {{ .Values.backend.name }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+    release: {{ .Release.Name }}
+spec:
+  replicas: {{ .Values.backend.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Values.backend.name }}
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.backend.name }}
+        release: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: {{ .Values.backend.name }}
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.backend.service.port }}
+              protocol: TCP
+          env:
+            - name: CONFIG_PATH
+              value: /app/config/config.yaml
+            - name: PYTHONPATH
+              value: /app
+            - name: OLLAMA_BASE_URL
+              value: http://{{ .Values.ollama.name }}:{{ .Values.ollama.service.port }}
+            - name: OLLAMA_MODEL_NAME
+              value: {{ .Values.backend.config.llm.ollama.model_name }}
+            {{- if .Values.secrets.create }}
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-secrets
+                  key: GITHUB_TOKEN
+            {{- else if .Values.secrets.existingSecret }}
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret }}
+                  key: GITHUB_TOKEN
+            {{- end }}
+          volumeMounts:
+            - name: config-volume
+              mountPath: /app/config
+            - name: data-volume
+              mountPath: /data
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
+      volumes:
+        - name: config-volume
+          configMap:
+            name: {{ .Release.Name }}-config
+        - name: data-volume
+          {{- if .Values.backend.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-backend-data
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
