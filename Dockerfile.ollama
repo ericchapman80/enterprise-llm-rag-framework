@@ -1,0 +1,11 @@
+FROM ollama/ollama:latest
+
+# Copy the zscaler certificate
+COPY zscaler.crt /usr/local/share/ca-certificates/zscaler.crt
+
+# Update the certificate store
+RUN cat /usr/local/share/ca-certificates/zscaler.crt >> /etc/ssl/certs/ca-certificates.crt && \
+    update-ca-certificates
+
+# Set the default command
+CMD ["serve"]

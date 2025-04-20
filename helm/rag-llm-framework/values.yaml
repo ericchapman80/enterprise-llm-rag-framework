@@ -1,0 +1,150 @@
+
+global:
+  environment: development
+  imageRegistry: ""
+
+backend:
+  name: rag-llm-backend
+  image:
+    repository: rag-llm-backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  resources:
+    limits:
+      cpu: 500m
+      memory: 2Gi
+    requests:
+      cpu: 100m
+      memory: 512Mi
+  service:
+    type: ClusterIP
+    port: 8000
+  ingress:
+    enabled: true
+    className: "nginx"
+    annotations:
+      kubernetes.io/ingress.class: nginx
+    hosts:
+      - host: rag-llm.local
+        paths:
+          - path: /
+            pathType: Prefix
+  config:
+    llm:
+      ollama:
+        base_url: http://ollama:11434
+        model_name: llama2
+        parameters:
+          temperature: 0.7
+          top_p: 0.9
+          max_tokens: 2048
+    embeddings:
+      model_name: all-MiniLM-L6-v2
+      vector_db_path: /data/chroma_db
+    api:
+      host: 0.0.0.0
+      port: 8000
+      cors_origins:
+        - "*"
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: ""
+
+slackBot:
+  name: rag-llm-slackbot
+  image:
+    repository: rag-llm-slackbot
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  resources:
+    limits:
+      cpu: 500m
+      memory: 1Gi
+    requests:
+      cpu: 200m
+      memory: 512Mi
+
+ollama:
+  name: ollama
+  image:
+    repository: rag-llm-ollama-custom
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  resources:
+    limits:
+      cpu: 1500m
+      memory: 12Gi
+    requests:
+      cpu: 100m
+      memory: 512Mi
+  livenessProbe:
+    httpGet:
+      path: /
+      port: 11434
+    initialDelaySeconds: 30
+    periodSeconds: 15
+    timeoutSeconds: 15
+    failureThreshold: 10
+  service:
+    type: ClusterIP
+    port: 11434
+  persistence:
+    enabled: true
+    size: 20Gi
+    storageClass: ""
+    storage:
+      type: local  # Options: local, cloud
+      cloud:
+        provider: s3  # Options: s3, gcs, azure, nfs
+        s3:
+          bucket: ""
+          region: ""
+          prefix: "models/"
+          secretName: ""  # Name of the Kubernetes secret containing S3 credentials
+        gcs:
+          bucket: ""
+          prefix: "models/"
+          secretName: ""  # Name of the Kubernetes secret containing GCS credentials
+        azure:
+          container: ""
+          account: ""
+          secretName: ""  # Name of the Kubernetes secret containing Azure credentials
+        nfs:
+          server: ""
+          path: "/models"
+      cache:
+        enabled: true
+        size: "5Gi"
+        ttl: "24h"
+
+modelController:
+  image:
+    repository: rag-llm-model-controller
+    tag: latest
+    pullPolicy: IfNotPresent
+  resources:
+    limits:
+      cpu: 500m
+      memory: 1Gi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+secrets:
+  create: false
+  existingSecret: ""
+  values:
+    GITHUB_TOKEN: ""
+    SLACK_BOT_TOKEN: ""
+    SLACK_APP_TOKEN: ""
+    SLACK_SIGNING_SECRET: ""
+    S3_ACCESS_KEY: ""
+    S3_SECRET_KEY: ""
+    AZURE_STORAGE_KEY: ""
+
+persistence:
+  storageClass: ""

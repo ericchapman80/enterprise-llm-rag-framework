@@ -1,0 +1,103 @@
+{{- if and .Values.ollama.persistence.enabled (eq .Values.ollama.persistence.storage.type "cloud") }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-model-controller
+  labels:
+    app: {{ .Release.Name }}-model-controller
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+    release: {{ .Release.Name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-model-controller
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-model-controller
+        release: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: model-controller
+          image: "{{ .Values.modelController.image.repository }}:{{ .Values.modelController.image.tag }}"
+          imagePullPolicy: {{ .Values.modelController.image.pullPolicy }}
+          env:
+            - name: OLLAMA_STORAGE_TYPE
+              value: {{ .Values.ollama.persistence.storage.type }}
+            - name: OLLAMA_CLOUD_PROVIDER
+              value: {{ .Values.ollama.persistence.storage.cloud.provider }}
+            - name: OLLAMA_CACHE_DIR
+              value: "/cache"
+            {{- if eq .Values.ollama.persistence.storage.cloud.provider "s3" }}
+            - name: S3_BUCKET
+              value: {{ .Values.ollama.persistence.storage.cloud.s3.bucket }}
+            - name: S3_REGION
+              value: {{ .Values.ollama.persistence.storage.cloud.s3.region }}
+            - name: S3_PREFIX
+              value: {{ .Values.ollama.persistence.storage.cloud.s3.prefix | default "models/" }}
+            - name: S3_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.ollama.persistence.storage.cloud.s3.secretName }}
+                  key: access_key
+            - name: S3_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.ollama.persistence.storage.cloud.s3.secretName }}
+                  key: secret_key
+            {{- end }}
+            {{- if eq .Values.ollama.persistence.storage.cloud.provider "gcs" }}
+            - name: GCS_BUCKET
+              value: {{ .Values.ollama.persistence.storage.cloud.gcs.bucket }}
+            - name: GCS_PREFIX
+              value: {{ .Values.ollama.persistence.storage.cloud.gcs.prefix | default "models/" }}
+            - name: GCS_CREDENTIALS_FILE
+              value: "/gcp/credentials.json"
+            {{- end }}
+            {{- if eq .Values.ollama.persistence.storage.cloud.provider "azure" }}
+            - name: AZURE_CONTAINER
+              value: {{ .Values.ollama.persistence.storage.cloud.azure.container }}
+            - name: AZURE_STORAGE_ACCOUNT
+              value: {{ .Values.ollama.persistence.storage.cloud.azure.account }}
+            - name: AZURE_STORAGE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.ollama.persistence.storage.cloud.azure.secretName }}
+                  key: storage_key
+            {{- end }}
+            {{- if eq .Values.ollama.persistence.storage.cloud.provider "nfs" }}
+            - name: NFS_PATH
+              value: {{ .Values.ollama.persistence.storage.cloud.nfs.path }}
+            {{- end }}
+          volumeMounts:
+            - name: cache
+              mountPath: "/cache"
+            {{- if eq .Values.ollama.persistence.storage.cloud.provider "gcs" }}
+            - name: gcp-credentials
+              mountPath: "/gcp"
+              readOnly: true
+            {{- end }}
+            {{- if eq .Values.ollama.persistence.storage.cloud.provider "nfs" }}
+            - name: nfs-models
+              mountPath: {{ .Values.ollama.persistence.storage.cloud.nfs.path }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.modelController.resources | nindent 12 }}
+      volumes:
+        - name: cache
+          emptyDir: 
+            sizeLimit: {{ .Values.ollama.persistence.storage.cache.size | default "5Gi" }}
+        {{- if eq .Values.ollama.persistence.storage.cloud.provider "gcs" }}
+        - name: gcp-credentials
+          secret:
+            secretName: {{ .Values.ollama.persistence.storage.cloud.gcs.secretName }}
+        {{- end }}
+        {{- if eq .Values.ollama.persistence.storage.cloud.provider "nfs" }}
+        - name: nfs-models
+          nfs:
+            server: {{ .Values.ollama.persistence.storage.cloud.nfs.server }}
+            path: {{ .Values.ollama.persistence.storage.cloud.nfs.path }}
+        {{- end }}
+{{- end }}

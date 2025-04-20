@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.slackBot.name }}
+  labels:
+    app: {{ .Values.slackBot.name }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+    release: {{ .Release.Name }}
+spec:
+  replicas: {{ .Values.slackBot.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Values.slackBot.name }}
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.slackBot.name }}
+        release: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: {{ .Values.slackBot.name }}
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.slackBot.image.repository }}:{{ .Values.slackBot.image.tag }}"
+          imagePullPolicy: {{ .Values.slackBot.image.pullPolicy }}
+          env:
+            - name: RAG_API_URL
+              value: http://{{ .Values.backend.name }}:{{ .Values.backend.service.port }}
+            {{- if .Values.secrets.create }}
+            - name: SLACK_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-secrets
+                  key: SLACK_BOT_TOKEN
+            - name: SLACK_APP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-secrets
+                  key: SLACK_APP_TOKEN
+            - name: SLACK_SIGNING_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-secrets
+                  key: SLACK_SIGNING_SECRET
+            {{- else if .Values.secrets.existingSecret }}
+            - name: SLACK_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret }}
+                  key: SLACK_BOT_TOKEN
+            - name: SLACK_APP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret }}
+                  key: SLACK_APP_TOKEN
+            - name: SLACK_SIGNING_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret }}
+                  key: SLACK_SIGNING_SECRET
+            {{- end }}
+          resources:
+            {{- toYaml .Values.slackBot.resources | nindent 12 }}
