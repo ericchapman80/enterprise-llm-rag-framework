@@ -24,11 +24,8 @@ jobs:
           export RAG_TEST_MODE=true
           python tests/post_deployment/run_tests.py --modules core,chat,repo
       - name: Upload test reports
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v2
         if: always()
         with:
           name: test-reports
-          path: |
-            test-reports/
-            tests/post_deployment/reports/
-          retention-days: 7
+          path: test-reports/
