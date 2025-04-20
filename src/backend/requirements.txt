@@ -1,0 +1,29 @@
+# Core dependencies
+fastapi>=0.104.0
+uvicorn>=0.23.2
+pydantic>=2.4.2
+python-dotenv>=1.0.0
+python-multipart>=0.0.5
+
+# LLM and RAG dependencies
+langchain>=0.0.267
+langchain-community>=0.0.10
+langchain-core>=0.1.0
+langchain-text-splitters>=0.0.1
+langchain-chroma>=0.0.1
+chromadb>=0.4.18
+sentence-transformers>=2.2.2
+
+# Ollama integration
+ollama>=0.1.0
+
+# Document processing
+unstructured>=0.10.30
+markdown>=3.4.3
+beautifulsoup4>=4.12.2
+PyGithub>=2.1.1
+GitPython>=3.1.30
+
+# Utilities
+pyyaml>=6.0.1
+tenacity>=8.2.3
