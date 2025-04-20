@@ -5,13 +5,17 @@ This module provides functionality for managing GitHub repositories to be ingest
 import os
 import json
 import logging
+import random
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
+import concurrent.futures
+import multiprocessing
 
 from src.backend.data_ingestion import DataIngestionManager
-from src.backend.rag_engine import RAGEngine
+from src.backend.rag_engine import RAGEngine, get_rag_engine
+from langchain.schema import Document
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -88,55 +92,68 @@ def save_repository_config(config: RepositoryConfig) -> bool:
         logger.error(f"Error saving repository configuration: {str(e)}")
         return False
 
-async def ingest_repositories(repositories: List[Repository], rag_engine: RAGEngine) -> Dict[str, Any]:
+def get_optimal_thread_count() -> int:
+    """
+    Determine the optimal number of threads for repository ingestion based on environment.
+    
+    Returns:
+        The optimal number of threads to use
+    """
+    env_thread_count = os.environ.get("RAG_INGESTION_THREADS")
+    if env_thread_count and env_thread_count.isdigit():
+        thread_count = int(env_thread_count)
+        logger.info(f"🧵 Using {thread_count} threads for repository ingestion (from environment)")
+        return thread_count
+        
+    cpu_count = multiprocessing.cpu_count()
+    default_thread_count = max(2, min(cpu_count, 8))
+    logger.info(f"🧵 Using {default_thread_count} threads for repository ingestion (auto-detected from {cpu_count} CPU cores)")
+    return default_thread_count
+
+async def ingest_repositories(repositories: List[Repository], thread_count: int, rag_engine: RAGEngine) -> List[Dict[str, Any]]:
     """
     Ingest a list of repositories into the RAG system.
     
     Args:
         repositories: The list of repositories to ingest
+        thread_count: Number of threads to use for parallel ingestion
         rag_engine: The RAG engine instance
         
     Returns:
-        A dictionary containing the ingestion results
+        A list of dictionaries containing the ingestion results for each repository
     """
-    results = {
-        "success": [],
-        "failed": []
-    }
+    results = []
+    
+    if os.environ.get("RAG_TEST_MODE") == "true":
+        logger.info("🧪 Running in test mode. Simulating repository ingestion.")
+        for repo in repositories:
+            doc_count = random.randint(5, 20)
+            results.append({
+                "repo_url": repo.repo_url,
+                "branch": repo.branch,
+                "status": "success",
+                "message": f"Successfully simulated ingestion of GitHub repository: {repo.repo_url} in test mode",
+                "document_count": doc_count
+            })
+        return results
     
     ingestion_manager = DataIngestionManager()
     github_token = os.environ.get("GITHUB_TOKEN")
     
-    if not github_token and os.environ.get("RAG_TEST_MODE") != "true":
-        logger.warning("GitHub token not found. Set the GITHUB_TOKEN environment variable for GitHub repository ingestion.")
+    if not github_token:
+        logger.warning("⚠️ GitHub token not found. Set the GITHUB_TOKEN environment variable for GitHub repository ingestion.")
         for repo in repositories:
-            results["failed"].append({
+            results.append({
                 "repo_url": repo.repo_url,
                 "branch": repo.branch,
+                "status": "failed",
                 "error": "GitHub token not provided. Set the GITHUB_TOKEN environment variable."
             })
         return results
     
-    if os.environ.get("RAG_TEST_MODE") == "true":
-        logger.info("Running in test mode. Simulating repository ingestion.")
-        for repo in repositories:
-            if "example" in repo.repo_url or "test" in repo.repo_url:
-                results["success"].append({
-                    "repo_url": repo.repo_url,
-                    "branch": repo.branch,
-                    "document_count": 5  # Simulated document count
-                })
-            else:
-                results["failed"].append({
-                    "repo_url": repo.repo_url,
-                    "branch": repo.branch,
-                    "error": "Authentication failed in test mode"
-                })
-        return results
-    
-    for repo in repositories:
+    def process_repository(repo):
         try:
-            logger.info(f"Ingesting repository: {repo.repo_url}, branch: {repo.branch}")
+            logger.info(f"📚 Ingesting repository: {repo.repo_url}, branch: {repo.branch}")
             
             documents = ingestion_manager.ingest_github_repo(
                 repo_url=repo.repo_url,
@@ -146,19 +163,36 @@ async def ingest_repositories(repositories: List[Repository], rag_engine: RAGEng
             )
             
             rag_engine.add_documents(documents)
+            logger.info(f"✅ Successfully added {len(documents)} documents from {repo.repo_url} to the database")
             
-            results["success"].append({
+            return {
                 "repo_url": repo.repo_url,
                 "branch": repo.branch,
+                "status": "success",
+                "message": f"Successfully ingested {len(documents)} documents from GitHub repository",
                 "document_count": len(documents)
-            })
+            }
         except Exception as e:
-            logger.error(f"Error ingesting repository {repo.repo_url}: {str(e)}")
-            results["failed"].append({
+            logger.error(f"❌ Error ingesting repository {repo.repo_url}: {str(e)}")
+            return {
                 "repo_url": repo.repo_url,
                 "branch": repo.branch,
+                "status": "failed",
                 "error": str(e)
-            })
+            }
+    
+    logger.info(f"🔄 Processing {len(repositories)} repositories using {thread_count} threads")
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=thread_count) as executor:
+        future_to_repo = {executor.submit(process_repository, repo): repo for repo in repositories}
+        
+        for future in concurrent.futures.as_completed(future_to_repo):
+            result = future.result()
+            results.append(result)
+            if result.get("status") == "success":
+                logger.info(f"📊 Repository {result['repo_url']} successfully added to database with {result['document_count']} documents")
+            else:
+                logger.error(f"❌ Repository {result['repo_url']} failed: {result.get('error')}")
     
     return results
 
@@ -182,6 +216,22 @@ async def list_repositories() -> RepositoryConfig:
     except Exception as e:
         logger.error(f"Error listing repositories: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error listing repositories: {str(e)}")
+
+@router.get(
+    "/repos/config",
+    response_model=RepositoryConfig,
+    summary="Get repository configuration",
+    description="This endpoint returns the repository configuration, including the list of repositories and auto-ingest setting.",
+    response_description="The repository configuration"
+)
+async def get_repository_config() -> RepositoryConfig:
+    """
+    Get the repository configuration.
+    
+    Returns:
+        The repository configuration
+    """
+    return await list_repositories()
 
 @router.post(
     "/update-repos",
@@ -223,6 +273,22 @@ async def update_repos(
         raise HTTPException(status_code=500, detail=f"Error updating repository configuration: {str(e)}")
 
 @router.post(
+    "/repos/update-config",
+    response_model=UpdateReposResponse,
+    summary="Update repository configuration",
+    description="This endpoint updates the repository configuration with the provided repositories and settings.",
+    response_description="Status of the configuration update operation"
+)
+async def update_repository_config(request: UpdateReposRequest) -> Dict[str, Any]:
+    """
+    Update the repository configuration.
+    
+    Args:
+        request: The update request
+    """
+    return await update_repos(request)
+
+@router.post(
     "/ingest/github",
     summary="Ingest a GitHub repository into the RAG system",
     description="This endpoint allows ingestion of a GitHub repository into the RAG system. The repository contents will be processed, embedded, and stored in the vector database for retrieval during queries.",
@@ -230,7 +296,7 @@ async def update_repos(
 )
 async def ingest_github_repository(
     repo: Repository,
-    rag_engine: RAGEngine = Depends(lambda: RAGEngine(config={}))
+    rag_engine: RAGEngine = Depends(get_rag_engine)
 ) -> Dict[str, Any]:
     """
     Ingest a GitHub repository into the RAG system.
@@ -242,7 +308,75 @@ async def ingest_github_repository(
     Returns:
         A dictionary containing the ingestion results
     """
+    if os.environ.get("RAG_TEST_MODE") == "true":
+        logger.info(f"🧪 Test mode: Simulating GitHub repository ingestion for: {repo.repo_url}")
+        
+        import random
+        doc_count = random.randint(5, 20)
+        
+        return {
+            "status": "success",
+            "message": f"Successfully simulated ingestion of GitHub repository: {repo.repo_url} in test mode",
+            "document_count": doc_count
+        }
+        
     try:
+        if not repo.repo_url:
+            raise HTTPException(status_code=400, detail="Repository URL is required")
+        
+        github_token = os.environ.get("GITHUB_TOKEN")
+        
+        logger.info(f"Ingesting GitHub repository: {repo.repo_url}, branch: {repo.branch}")
+        
+        ingestion_manager = DataIngestionManager()
+        
+        try:
+            documents = ingestion_manager.ingest_github_repo(
+                repo_url=repo.repo_url,
+                branch=repo.branch,
+                github_token=github_token,
+                file_filter=repo.file_extensions
+            )
+            
+            rag_engine.add_documents(documents)
+            
+            return {
+                "status": "success", 
+                "message": f"Successfully ingested {len(documents)} documents from GitHub repository",
+                "document_count": len(documents)
+            }
+        except Exception as repo_error:
+            logger.error(f"Error ingesting GitHub repository: {repo_error}")
+            raise HTTPException(status_code=500, detail=f"Error ingesting GitHub repository: {str(repo_error)}")
+    
+    except Exception as e:
+        logger.error(f"Error processing GitHub ingestion request: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post(
+    "/repos/ingest-github",
+    summary="Ingest a GitHub repository",
+    description="This endpoint ingests a GitHub repository into the RAG system.",
+    response_description="Status of the repository ingestion operation"
+)
+async def ingest_github_repo(
+    repo: Repository,
+    rag_engine: RAGEngine = Depends(get_rag_engine)
+) -> Dict[str, Any]:
+    """Alias for the /ingest/github endpoint."""
+    try:
+        if os.environ.get("RAG_TEST_MODE") == "true":
+            logger.info(f"🧪 Test mode: Simulating GitHub repository ingestion for: {repo.repo_url}")
+            
+            import random
+            doc_count = random.randint(5, 20)
+            
+            return {
+                "status": "success",
+                "message": f"Successfully simulated ingestion of GitHub repository: {repo.repo_url} in test mode",
+                "document_count": doc_count
+            }
+        
         if not repo.repo_url:
             raise HTTPException(status_code=400, detail="Repository URL is required")
         
@@ -278,29 +412,78 @@ async def ingest_github_repository(
 @router.post(
     "/repos/ingest-repos",
     summary="Ingest all configured repositories",
-    description="This endpoint ingests all repositories configured in the repository configuration file into the RAG system.",
-    response_description="Status of the repository ingestion operation"
+    description="This endpoint ingests all repositories configured in the repository configuration file (config/github_repos.json) into the RAG system. It can be used to refresh the knowledge base with the latest content from all configured repositories.",
+    response_description="Status of the repository ingestion operation with detailed success/failure information"
 )
 async def ingest_all_repositories(
-    rag_engine: RAGEngine = Depends(lambda: RAGEngine(config={}))
+    rag_engine: RAGEngine = Depends(get_rag_engine)
 ) -> Dict[str, Any]:
     """
     Ingest all repositories configured in the repository configuration file.
+    
+    This endpoint will:
+    1. Read the repository configuration from config/github_repos.json
+    2. Attempt to ingest all configured repositories
+    3. Return detailed success/failure status for each repository
+    
+    This endpoint is useful for refreshing the RAG system's knowledge base with the latest content
+    from all configured GitHub repositories. It can be called via a cron job using the provided
+    scripts/refresh-github-repos.sh script.
+    
+    Environment Variables:
+        GITHUB_TOKEN: GitHub personal access token for accessing repositories
     
     Args:
         rag_engine: The RAG engine instance
         
     Returns:
-        A dictionary containing the ingestion results
+        Dict[str, Any]: Status of the ingestion process for each repository, including:
+            - success/failure counts
+            - list of successfully ingested repositories with document counts
+            - list of failed repositories with error messages
+    
+    Raises:
+        HTTPException(500): If there's an error reading the configuration or processing repositories
     """
-    try:
-        config = load_repository_config()
+    if os.environ.get("RAG_TEST_MODE") == "true":
+        logger.info("🧪 Running in test mode. Simulating repository ingestion.")
         
-        results = await ingest_repositories(config.repositories, rag_engine)
+        results = []
+        for i in range(2):
+            repo_name = f"example/repo{i+1}"
+            doc_count = random.randint(5, 20)
+            results.append({
+                "repo_url": f"https://github.com/{repo_name}",
+                "branch": "main",
+                "status": "success",
+                "message": f"Successfully simulated ingestion of GitHub repository in test mode",
+                "document_count": doc_count
+            })
+        
+        success_count = sum(1 for r in results if r.get("status") == "success")
+        failed_count = len(results) - success_count
         
         return {
             "status": "success",
-            "message": f"Ingestion completed with {len(results['success'])} successful and {len(results['failed'])} failed repositories",
+            "message": f"Ingestion completed with {success_count} successful and {failed_count} failed repositories (test mode)",
+            "results": results
+        }
+    
+    try:
+        config = load_repository_config()
+        
+        # Determine optimal thread count
+        thread_count = get_optimal_thread_count()
+        
+        # Ingest repositories with multithreading
+        results = await ingest_repositories(config.repositories, thread_count, rag_engine)
+        
+        success_count = sum(1 for r in results if r.get("status") == "success")
+        failed_count = len(results) - success_count
+        
+        return {
+            "status": "success",
+            "message": f"Ingestion completed with {success_count} successful and {failed_count} failed repositories",
             "results": results
         }
     except Exception as e:
@@ -316,20 +499,38 @@ async def ingest_repositories_on_startup(rag_engine: RAGEngine) -> None:
     """
     try:
         if os.environ.get("RAG_TEST_MODE") == "true":
-            logger.info("Skipping auto-ingestion in test mode")
+            logger.info("🧪 Skipping auto-ingestion in test mode")
             return
             
         config = load_repository_config()
         
         if not config.auto_ingest_on_startup:
-            logger.info("Auto-ingestion of repositories is disabled")
+            logger.info("ℹ️ Auto-ingestion of repositories is disabled")
             return
         
         if not config.repositories:
-            logger.info("No repositories configured for ingestion")
+            logger.info("ℹ️ No repositories configured for ingestion")
             return
         
-        logger.info(f"Auto-ingesting {len(config.repositories)} repositories on startup")
-        await ingest_repositories(config.repositories, rag_engine)
+        logger.info(f"🚀 Auto-ingesting {len(config.repositories)} repositories on startup")
+        
+        for idx, repo in enumerate(config.repositories):
+            logger.info(f"📋 Repository {idx+1}/{len(config.repositories)}: {repo.repo_url} (branch: {repo.branch})")
+        
+        # Determine optimal thread count
+        thread_count = get_optimal_thread_count()
+        results = await ingest_repositories(config.repositories, thread_count, rag_engine)
+        
+        success_count = sum(1 for r in results if r.get("status") == "success")
+        failed_count = len(results) - success_count
+        
+        logger.info(f"✅ Successfully ingested {success_count} repositories into the database")
+        if failed_count > 0:
+            logger.warning(f"⚠️ Failed to ingest {failed_count} repositories")
+            
+        # Log total document count
+        total_docs = sum(r.get("document_count", 0) for r in results if r.get("status") == "success")
+        logger.info(f"📚 Total documents added to database: {total_docs}")
+        
     except Exception as e:
-        logger.error(f"Error ingesting repositories on startup: {str(e)}")
+        logger.error(f"❌ Error ingesting repositories on startup: {str(e)}")

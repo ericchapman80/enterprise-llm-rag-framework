@@ -36,6 +36,60 @@ document.addEventListener('DOMContentLoaded', function() {
         sendButton.disabled = !messageInput.value.trim();
     }
     
+    function formatBotMessage(message) {
+        if (!message) return '';
+        
+        if (message.toLowerCase().includes('hello') || message.toLowerCase().includes('hi')) {
+            message = '👋 ' + message;
+        } else if (message.toLowerCase().includes('thank')) {
+            message = '🙏 ' + message;
+        } else if (message.toLowerCase().includes('error') || message.toLowerCase().includes('sorry')) {
+            message = '❗ ' + message;
+        } else if (message.toLowerCase().includes('successful') || message.toLowerCase().includes('complete')) {
+            message = '✅ ' + message;
+        } else {
+            message = '🤖 ' + message;
+        }
+        
+        message = message.replace(/(\d+\.\s)([^\n]+)/g, (match, number, content) => {
+            let emoji = '•';
+            if (content.toLowerCase().includes('step')) emoji = '🔄';
+            else if (content.toLowerCase().includes('install')) emoji = '📥';
+            else if (content.toLowerCase().includes('create')) emoji = '✨';
+            else if (content.toLowerCase().includes('update')) emoji = '🔄';
+            else if (content.toLowerCase().includes('delete')) emoji = '🗑️';
+            else if (content.toLowerCase().includes('add')) emoji = '➕';
+            else if (content.toLowerCase().includes('remove')) emoji = '➖';
+            else if (content.toLowerCase().includes('fix')) emoji = '🔧';
+            else if (content.toLowerCase().includes('test')) emoji = '🧪';
+            else emoji = '•';
+            
+            return `<br>${emoji} ${content}<br>`;
+        });
+        
+        message = message.replace(/(-|\*)\s([^\n]+)/g, (match, bullet, content) => {
+            let emoji = '•';
+            if (content.toLowerCase().includes('step')) emoji = '🔄';
+            else if (content.toLowerCase().includes('install')) emoji = '📥';
+            else if (content.toLowerCase().includes('create')) emoji = '✨';
+            else if (content.toLowerCase().includes('update')) emoji = '🔄';
+            else if (content.toLowerCase().includes('delete')) emoji = '🗑️';
+            else if (content.toLowerCase().includes('add')) emoji = '➕';
+            else if (content.toLowerCase().includes('remove')) emoji = '➖';
+            else if (content.toLowerCase().includes('fix')) emoji = '🔧';
+            else if (content.toLowerCase().includes('test')) emoji = '🧪';
+            else emoji = '•';
+            
+            return `<br>${emoji} ${content}<br>`;
+        });
+        
+        message = message.replace(/(\d{1,2}\/\d{1,2}\/\d{2,4}|\d{4}-\d{2}-\d{2})/g, '📅 $1');
+        
+        message = message.replace(/\n/g, '<br>');
+        
+        return message;
+    }
+    
     function createUserMessage(message) {
         const template = userMessageTemplate.content.cloneNode(true);
         template.querySelector('.message-content p').textContent = message;
@@ -44,13 +98,17 @@ document.addEventListener('DOMContentLoaded', function() {
     
     function createBotMessage(message, sources) {
         const template = botMessageTemplate.content.cloneNode(true);
-        template.querySelector('.message-content p').textContent = message;
+        const messageContent = template.querySelector('.message-content p');
+        
+        let formattedMessage = formatBotMessage(message);
+        
+        messageContent.innerHTML = formattedMessage;
         
         const sourcesList = template.querySelector('.sources ul');
         if (sources && sources.length > 0) {
             sources.forEach(source => {
                 const li = document.createElement('li');
-                li.textContent = source.content.substring(0, 100) + '...';
+                li.innerHTML = `📄 ${source.content.substring(0, 100)}...`;
                 sourcesList.appendChild(li);
             });
         } else {
