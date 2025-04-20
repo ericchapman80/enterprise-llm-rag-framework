@@ -33,7 +33,7 @@ except ImportError:
             from .repo_management import ingest_repositories_on_startup
         except ImportError:
             # Last resort - direct import
-            sys.path.append('/app/src/backend')
+            sys.path.append(os.path.dirname(os.path.abspath(__file__)))
             from rag_engine import RAGEngine
             from repo_management import router as repo_management_router
             from repo_management import ingest_repositories_on_startup
@@ -72,6 +72,9 @@ except Exception as e:
             "host": "0.0.0.0",
             "port": 8000,
             "cors_origins": ["*"]
+        },
+        "ingestion": {
+            "threads": int(os.environ.get("RAG_INGESTION_THREADS", "0"))  # 0 means auto-detect
         }
     }
 
@@ -84,7 +87,25 @@ except Exception as e:
     rag_engine = None
 
 # Create FastAPI app
-app = FastAPI(title="RAG-LLM API", description="API for RAG-enabled LLM Framework")
+app = FastAPI(
+    title="RAG-LLM API",
+    description="""
+    API for RAG-enabled LLM Framework that provides retrieval-augmented generation capabilities. 
+    
+    This API allows you to:
+    - Ingest data from various sources including GitHub repositories
+    - Query the knowledge base using natural language
+    - Compare responses with and without RAG context
+    - Maintain conversational chat sessions with context
+    - Provide feedback on responses for continuous improvement
+    
+    The API is designed to be used with Ollama for LLM capabilities and uses vector embeddings 
+    to store and retrieve relevant context from your knowledge base.
+    """,
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc"
+)
 
 # Configure CORS
 app.add_middleware(
@@ -125,9 +146,25 @@ async def serve_index():
         logger.warning(f"Index file not found at {index_path}")
         return {"message": "Web UI not available"}
 
-@app.get("/health")
+@app.get(
+    "/health",
+    tags=["System"],
+    summary="Health Check",
+    description="Returns the health status of the API and its current version.",
+    response_description="Health status and version information"
+)
 async def health_check():
-    """Health check endpoint"""
+    """
+    Health check endpoint to verify that the API is running correctly.
+    
+    This endpoint can be used for:
+    - Monitoring system health
+    - Verifying API availability
+    - Checking the current API version
+    
+    Returns:
+        dict: A dictionary containing the health status and version information
+    """
     return {"status": "healthy", "version": "1.0.0"}
 
 class QueryRequest(BaseModel):
@@ -142,12 +179,34 @@ class QueryResponse(BaseModel):
 @app.post(
     "/query",
     response_model=QueryResponse,
+    tags=["Core"],
     summary="Query the RAG-LLM system",
     description="This endpoint processes a query using the RAG-enhanced LLM system. It retrieves relevant context from the vector database and uses it to generate a more informed response.",
     response_description="The LLM response enhanced with relevant context from the vector database"
 )
 async def query(request_data: QueryRequest):
-    """Query the RAG-LLM system"""
+    """
+    Query the RAG-LLM system with a natural language question or prompt.
+    
+    This endpoint:
+    1. Takes a user query as input
+    2. Retrieves relevant documents from the vector database
+    3. Uses the retrieved documents as context for the LLM
+    4. Returns the LLM's response along with the source documents used
+    
+    Parameters:
+        request_data (QueryRequest): The query request containing:
+            - query (str): The question or prompt to send to the RAG system
+            - max_tokens (int, optional): Maximum number of tokens to generate
+            - temperature (float, optional): Controls randomness in the response
+    
+    Returns:
+        QueryResponse: The LLM's response and the source documents used as context
+    
+    Raises:
+        HTTPException(400): If the query text is missing
+        HTTPException(500): If there's an error processing the query
+    """
     if rag_engine is None:
         raise HTTPException(status_code=500, detail="RAG engine not initialized")
     
@@ -441,33 +500,34 @@ async def query_comparison(request_data: QueryComparisonRequest):
     if rag_engine is None:
         raise HTTPException(status_code=500, detail="RAG engine not initialized")
     
-    try:
-        query_text = request_data.query
-        
-        if not query_text:
-            raise HTTPException(status_code=400, detail="Query text is required")
-        
-        if os.environ.get("RAG_TEST_MODE") == "true":
-            logger.info(f"Test mode: Simulating query comparison for: {query_text}")
-            return {
-                "status": "success",
-                "query": query_text,
-                "with_rag": {
-                    "response": f"This is a simulated RAG-enhanced response to: '{query_text}' with additional context from the knowledge base.",
-                    "sources": [
-                        {
-                            "content": "This is a simulated source document used for the RAG response.",
-                            "metadata": {
-                                "source": "test-repo",
-                                "file": "test-file.md"
-                            }
+    query_text = request_data.query
+    
+    if not query_text:
+        raise HTTPException(status_code=400, detail="Query text is required")
+    
+    if os.environ.get("RAG_TEST_MODE") == "true":
+        logger.info(f"Test mode: Simulating query comparison for: {query_text}")
+        return {
+            "status": "success",
+            "query": query_text,
+            "with_rag": {
+                "response": f"This is a simulated RAG-enhanced response to: '{query_text}' with additional context from the knowledge base.",
+                "sources": [
+                    {
+                        "content": "This is a simulated source document used for the RAG response.",
+                        "metadata": {
+                            "source": "test-repo",
+                            "file": "test-file.md"
                         }
-                    ]
-                },
-                "without_rag": {
-                    "response": f"This is a simulated standard LLM response to: '{query_text}'"
-                }
+                    }
+                ]
+            },
+            "without_rag": {
+                "response": f"This is a simulated standard LLM response to: '{query_text}'"
             }
+        }
+        
+    try:
         
         kwargs = {}
         if request_data.max_tokens is not None:
@@ -498,10 +558,16 @@ async def startup_event():
     """Perform startup tasks like ingesting repositories."""
     if rag_engine is not None:
         try:
+            logger.info("🚀 Starting repository ingestion on startup")
+            thread_count = os.environ.get("RAG_INGESTION_THREADS", "auto")
+            logger.info(f"🧵 Using thread configuration: {thread_count}")
+            
             await ingest_repositories_on_startup(rag_engine)
-            logger.info("Repository ingestion on startup completed")
+            
+            logger.info("✅ Repository ingestion on startup completed successfully")
+            logger.info("📚 RAG system is ready to use with the latest repository data")
         except Exception as e:
-            logger.error(f"Error during startup repository ingestion: {e}")
+            logger.error(f"❌ Error during startup repository ingestion: {e}")
 
 if __name__ == "__main__":
     import uvicorn

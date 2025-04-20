@@ -15,12 +15,12 @@ project_root = os.path.dirname(os.path.dirname(current_dir))
 sys.path.append(project_root)
 
 try:
-    from src.backend.rag_engine import RAGEngine
+    from src.backend.rag_engine import RAGEngine, get_rag_engine
 except ImportError:
     try:
-        from backend.rag_engine import RAGEngine
+        from backend.rag_engine import RAGEngine, get_rag_engine
     except ImportError:
-        from rag_engine import RAGEngine
+        from rag_engine import RAGEngine, get_rag_engine
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +77,7 @@ class ChatFeedbackResponse(BaseModel):
 )
 async def send_message(
     request: ChatRequest,
-    rag_engine: RAGEngine = Depends(lambda: RAGEngine(config={}))
+    rag_engine: RAGEngine = Depends(get_rag_engine)
 ) -> Dict[str, Any]:
     """
     Send a message to the chat.
@@ -96,17 +96,18 @@ async def send_message(
         if not message:
             raise HTTPException(status_code=400, detail="Message is required")
 
-        try:
-            if os.environ.get("RAG_TEST_MODE") == "true":
-                import uuid
-                if not conversation_id:
-                    conversation_id = str(uuid.uuid4())
-                return {
-                    "conversation_id": conversation_id,
-                    "response": f"This is a test response for: {message}",
-                    "sources": []
-                }
+        if os.environ.get("RAG_TEST_MODE") == "true":
+            import uuid
+            if not conversation_id:
+                conversation_id = str(uuid.uuid4())
+            logger.info(f"Test mode: Simulating chat response for: {message}")
+            return {
+                "conversation_id": conversation_id,
+                "response": f"This is a test response for: {message}",
+                "sources": []
+            }
 
+        try:
             result = rag_engine.query_with_conversation(
                 message,
                 conversation_id=conversation_id
@@ -152,7 +153,7 @@ async def send_message(
 )
 async def get_chat_history(
     conversation_id: str,
-    rag_engine: RAGEngine = Depends(lambda: RAGEngine(config={}))
+    rag_engine: RAGEngine = Depends(get_rag_engine)
 ) -> Dict[str, Any]:
     """
     Get the chat history for a conversation.
@@ -171,24 +172,25 @@ async def get_chat_history(
                 detail="Conversation ID is required"
             )
 
-        try:
-            if os.environ.get("RAG_TEST_MODE") == "true":
-                return {
-                    "conversation_id": conversation_id,
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": "Test message",
-                            "timestamp": datetime.now().isoformat()
-                        },
-                        {
-                            "role": "assistant",
-                            "content": "This is a test response",
-                            "timestamp": datetime.now().isoformat()
-                        }
-                    ]
-                }
+        if os.environ.get("RAG_TEST_MODE") == "true":
+            logger.info(f"Test mode: Returning simulated chat history for conversation: {conversation_id}")
+            return {
+                "conversation_id": conversation_id,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Test message",
+                        "timestamp": datetime.now().isoformat()
+                    },
+                    {
+                        "role": "assistant",
+                        "content": "This is a test response",
+                        "timestamp": datetime.now().isoformat()
+                    }
+                ]
+            }
 
+        try:
             messages = rag_engine.get_conversation_history(conversation_id)
 
             return {
@@ -219,7 +221,7 @@ async def get_chat_history(
 )
 async def submit_chat_feedback(
     request: ChatFeedbackRequest,
-    rag_engine: RAGEngine = Depends(lambda: RAGEngine(config={}))
+    rag_engine: RAGEngine = Depends(get_rag_engine)
 ) -> Dict[str, Any]:
     """
     Submit feedback for a chat message.
@@ -236,6 +238,13 @@ async def submit_chat_feedback(
                 status_code=400,
                 detail="Conversation ID and message index are required"
             )
+
+        if os.environ.get("RAG_TEST_MODE") == "true":
+            logger.info(f"Test mode: Processing feedback for conversation {request.conversation_id}")
+            return {
+                "status": "success",
+                "message": "Feedback submitted successfully (test mode)"
+            }
 
         logger.info(
             f"Received feedback for conversation {request.conversation_id}, "
