@@ -19,8 +19,12 @@ fi
 
 echo "Refreshing GitHub repositories..."
 
-curl -X POST "$API_URL/ingest-repos" \
+RAG_INGESTION_THREADS=${RAG_INGESTION_THREADS:-"0"}
+echo "Using thread count: $RAG_INGESTION_THREADS"
+
+curl -X POST "$API_URL/repos/ingest-repos" \
     -H "Content-Type: application/json" \
+    -H "X-RAG-Threads: $RAG_INGESTION_THREADS" \
     -d '{}'
 
 echo ""

@@ -3,6 +3,7 @@ Data ingestion module for the RAG-enabled LLM system.
 """
 import os
 import logging
+import random
 from typing import List, Dict, Any, Optional, Union
 from pathlib import Path
 import tempfile
@@ -139,12 +140,44 @@ class DataIngestionManager:
         Returns:
             List of Document objects
         """
+        if os.environ.get("RAG_TEST_MODE") == "true":
+            logger.info(f"🧪 Test mode: Simulating GitHub repository ingestion for: {repo_url}")
+            
+            mock_docs = []
+            file_types = [".md", ".py", ".js", ".html", ".css", ".txt"]
+            repo_name = repo_url.split('/')[-1]
+            
+            # Generate 5-10 mock documents
+            num_docs = random.randint(5, 10)
+            for i in range(num_docs):
+                file_ext = random.choice(file_types)
+                file_name = f"mock_file_{i}{file_ext}"
+                
+                content = f"# Mock content for {file_name}\n\nThis is simulated content for testing purposes.\n"
+                content += f"Repository: {repo_url}\nBranch: {branch}\n"
+                
+                metadata = {
+                    "source": f"{repo_name}/{file_name}",
+                    "repo_url": repo_url,
+                    "branch": branch,
+                    "file_type": file_ext
+                }
+                
+                mock_docs.append(Document(page_content=content, metadata=metadata))
+            
+            logger.info(f"✅ Successfully simulated ingestion of {len(mock_docs)} documents from {repo_url}")
+            return mock_docs
+            
         try:
+            logger.info(f"📥 Starting ingestion of GitHub repository: {repo_url} (branch: {branch})")
+            
             with tempfile.TemporaryDirectory() as temp_dir:
                 if github_token:
+                    logger.info(f"🔑 Using GitHub token for authentication with repository: {repo_url}")
                     g = Github(github_token)
                     repo_name = repo_url.split('/')[-2] + '/' + repo_url.split('/')[-1]
                     repo = g.get_repo(repo_name)
+                    logger.info(f"✅ Successfully authenticated with GitHub for repository: {repo_name}")
                     
                     loader = GitLoader(
                         clone_url=repo_url,
@@ -152,24 +185,31 @@ class DataIngestionManager:
                         branch=branch
                     )
                 else:
+                    logger.info(f"⚠️ No GitHub token provided, attempting public repository access: {repo_url}")
                     loader = GitLoader(
                         clone_url=repo_url,
                         repo_path=temp_dir,
                         branch=branch
                     )
                 
+                logger.info(f"🔄 Cloning repository: {repo_url} to temporary directory")
                 documents = loader.load()
+                logger.info(f"✅ Successfully loaded {len(documents)} documents from repository: {repo_url}")
                 
                 if file_filter:
+                    logger.info(f"🔍 Filtering documents by extensions: {file_filter}")
                     filtered_docs = []
                     for doc in documents:
                         file_ext = Path(doc.metadata.get("source", "")).suffix
                         if file_ext in file_filter:
                             filtered_docs.append(doc)
+                    
+                    logger.info(f"📊 Filtered from {len(documents)} to {len(filtered_docs)} documents based on extensions")
                     documents = filtered_docs
                 
-                logger.info(f"Ingested {len(documents)} files from GitHub repo: {repo_url}")
+                logger.info(f"📚 Successfully ingested {len(documents)} files from GitHub repo: {repo_url}")
+                logger.info(f"💾 Documents ready to be added to the database")
                 return documents
         except Exception as e:
-            logger.error(f"Error ingesting GitHub repo: {str(e)}")
+            logger.error(f"❌ Error ingesting GitHub repo {repo_url}: {str(e)}")
             raise

@@ -11,8 +11,11 @@ langchain-community>=0.0.10
 langchain-core>=0.1.0
 langchain-text-splitters>=0.0.1
 langchain-chroma>=0.0.1
+langchain-ollama>=0.0.1
+langchain-huggingface>=0.0.1
 chromadb>=0.4.18
 sentence-transformers>=2.2.2
+numpy<2.0.0  # Pin numpy to avoid compatibility issues with torch
 
 # Ollama integration
 ollama>=0.1.0
