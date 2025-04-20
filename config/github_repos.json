@@ -1,0 +1,12 @@
+{
+  "repositories": [
+    {
+      "repo_url": "https://github.com/wwg-internal/productcore-launchpoint",
+      "branch": "main",
+      "file_extensions": [".md", ".py"],
+      "description": "Product Core LaunchPoint repository"
+    }
+  ],
+  "auto_ingest_on_startup": false,
+  "last_updated": "2025-04-17T16:45:07Z"
+}
