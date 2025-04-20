@@ -1,0 +1,70 @@
+
+llm:
+  ollama:
+    base_url: http://localhost:11434
+    model_name: llama2
+    parameters:
+      temperature: 0.7
+      top_p: 0.9
+      max_tokens: 2048
+    storage:
+      type: local  # Options: local, cloud
+      cloud:
+        provider: s3  # Options: s3, gcs, azure, nfs
+        s3:
+          bucket: ""
+          region: ""
+          prefix: "models/"
+          access_key: "${S3_ACCESS_KEY}"
+          secret_key: "${S3_SECRET_KEY}"
+        gcs:
+          bucket: ""
+          prefix: "models/"
+          credentials_file: "${GCS_CREDENTIALS_FILE}"
+        azure:
+          container: ""
+          account: ""
+          key: "${AZURE_STORAGE_KEY}"
+        nfs:
+          server: ""
+          path: "/models"
+      cache:
+        enabled: true
+        size: "5Gi"
+        ttl: "24h"
+
+embeddings:
+  model_name: all-MiniLM-L6-v2
+  vector_db_path: ./data/chroma_db
+
+data_sources:
+  github:
+    token: ${GITHUB_TOKEN}
+    repositories:
+      - url: https://github.com/example/repo1
+        branch: main
+        file_extensions: [".md", ".py", ".js", ".ts", ".java"]
+      - url: https://github.com/example/repo2
+        branch: main
+        file_extensions: [".md", ".py", ".js", ".ts", ".java"]
+  
+  local_directories:
+    - path: ./data/docs
+      glob: "**/*.md"
+    - path: ./data/code
+      glob: "**/*.{py,js,ts,java}"
+
+api:
+  host: 0.0.0.0
+  port: 8000
+  cors_origins:
+    - "*"  # Update this in production
+
+slack:
+  bot_token: ${SLACK_BOT_TOKEN}
+  app_token: ${SLACK_APP_TOKEN}
+  signing_secret: ${SLACK_SIGNING_SECRET}
+
+backstage:
+  api_url: http://localhost:8000
+  plugin_id: rag-llm
