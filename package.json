@@ -1,0 +1,25 @@
+{
+  "name": "rag-llm-framework",
+  "version": "1.0.0",
+  "description": "RAG-enabled LLM Framework with Ollama, LangChain, and Kubernetes deployment",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "rag",
+    "llm",
+    "ollama",
+    "langchain",
+    "kubernetes",
+    "helm",
+    "slack",
+    "backstage"
+  ],
+  "author": "Devin AI",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/grainger/rag-llm-framework.git"
+  }
+}
