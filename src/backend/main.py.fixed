@@ -1,0 +1,157 @@
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+import os
+import yaml
+import logging
+from typing import Dict, List, Optional, Any
+import sys
+
+# Add the parent directory to the Python path
+sys.path.append('/app')
+sys.path.append('/app/src')
+
+# Try different import approaches
+try:
+    from src.backend.rag_engine import RAGEngine
+except ImportError:
+    try:
+        from backend.rag_engine import RAGEngine
+    except ImportError:
+        try:
+            # Relative import
+            from .rag_engine import RAGEngine
+        except ImportError:
+            # Last resort - direct import
+            sys.path.append('/app/src/backend')
+            from rag_engine import RAGEngine
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Load configuration
+config_path = os.environ.get("CONFIG_PATH", "/app/config/config.yaml")
+logger.info(f"Loading configuration from {config_path}")
+
+try:
+    with open(config_path, "r") as f:
+        config = yaml.safe_load(f)
+except Exception as e:
+    logger.error(f"Error loading configuration: {e}")
+    config = {
+        "llm": {
+            "ollama": {
+                "base_url": os.environ.get("OLLAMA_BASE_URL", "http://ollama:11434"),
+                "model_name": os.environ.get("OLLAMA_MODEL_NAME", "llama2"),
+                "parameters": {
+                    "temperature": 0.7,
+                    "top_p": 0.9,
+                    "max_tokens": 2048
+                }
+            }
+        },
+        "embeddings": {
+            "model_name": "all-MiniLM-L6-v2",
+            "vector_db_path": "/data/chroma_db"
+        },
+        "api": {
+            "host": "0.0.0.0",
+            "port": 8000,
+            "cors_origins": ["*"]
+        }
+    }
+
+# Initialize RAG engine
+try:
+    rag_engine = RAGEngine(config)
+    logger.info("RAG engine initialized successfully")
+except Exception as e:
+    logger.error(f"Error initializing RAG engine: {e}")
+    rag_engine = None
+
+# Create FastAPI app
+app = FastAPI(title="RAG-LLM API", description="API for RAG-enabled LLM Framework")
+
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=config["api"].get("cors_origins", ["*"]),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "healthy", "version": "1.0.0"}
+
+@app.post("/query")
+async def query(request: Request):
+    """Query the RAG-LLM system"""
+    if rag_engine is None:
+        raise HTTPException(status_code=500, detail="RAG engine not initialized")
+    
+    try:
+        data = await request.json()
+        query_text = data.get("query")
+        
+        if not query_text:
+            raise HTTPException(status_code=400, detail="Query text is required")
+        
+        result = rag_engine.query(query_text)
+        return result
+    except Exception as e:
+        logger.error(f"Error processing query: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/feedback")
+async def submit_feedback(request: Request):
+    """Submit feedback for a query"""
+    try:
+        data = await request.json()
+        query_id = data.get("query_id")
+        feedback = data.get("feedback")
+        
+        if not query_id or feedback is None:
+            raise HTTPException(status_code=400, detail="Query ID and feedback are required")
+        
+        # Store feedback (placeholder)
+        logger.info(f"Received feedback for query {query_id}: {feedback}")
+        
+        return {"status": "success", "message": "Feedback submitted successfully"}
+    except Exception as e:
+        logger.error(f"Error submitting feedback: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/ingest")
+async def ingest_data(request: Request):
+    """Ingest data into the RAG system"""
+    if rag_engine is None:
+        raise HTTPException(status_code=500, detail="RAG engine not initialized")
+    
+    try:
+        data = await request.json()
+        source_type = data.get("source_type")
+        source_data = data.get("source_data")
+        
+        if not source_type or not source_data:
+            raise HTTPException(status_code=400, detail="Source type and data are required")
+        
+        # Placeholder for ingestion logic
+        logger.info(f"Ingesting data of type {source_type}")
+        
+        return {"status": "success", "message": "Data ingestion started"}
+    except Exception as e:
+        logger.error(f"Error ingesting data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "main:app", 
+        host=config["api"].get("host", "0.0.0.0"), 
+        port=config["api"].get("port", 8000),
+        reload=True
+    )
