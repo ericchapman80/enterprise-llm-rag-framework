@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.ollama.name }}
+  labels:
+    app: {{ .Values.ollama.name }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+    release: {{ .Release.Name }}
+spec:
+  replicas: {{ .Values.ollama.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Values.ollama.name }}
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.ollama.name }}
+        release: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: {{ .Values.ollama.name }}
+          image: "{{ .Values.ollama.image.repository }}:{{ .Values.ollama.image.tag }}"
+          imagePullPolicy: {{ .Values.ollama.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.ollama.service.port }}
+              protocol: TCP
+          volumeMounts:
+            - name: ollama-data
+              mountPath: /root/.ollama
+            - name: zscaler-cert
+              mountPath: /usr/local/share/ca-certificates/zscaler.crt
+              subPath: zscaler.crt
+          resources:
+            {{- toYaml .Values.ollama.resources | nindent 12 }}
+          {{- if .Values.ollama.livenessProbe }}
+          livenessProbe:
+            {{- toYaml .Values.ollama.livenessProbe | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: ollama-data
+          {{- if .Values.ollama.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-ollama-data
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: zscaler-cert
+          configMap:
+            name: {{ .Release.Name }}-zscaler-cert

@@ -1,0 +1,37 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Install dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    curl \
+    wget \
+    git \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements
+COPY src/backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Install cloud storage libraries
+RUN pip install --no-cache-dir \
+    boto3 \
+    google-cloud-storage \
+    azure-storage-blob \
+    python-nfs
+
+# Copy source code
+COPY src /app/src
+COPY config /app/config
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+
+# Create cache directory
+RUN mkdir -p /cache
+
+# Run the model controller
+CMD ["python", "-m", "src.backend.model_storage", "--controller"]
