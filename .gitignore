@@ -68,3 +68,5 @@ kubeconfig
 # Temporary files
 tmp/
 temp/
+# Virtual Environment directories
+scripts/rag-llm-env/
