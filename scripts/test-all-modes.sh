@@ -77,6 +77,11 @@ function test_local_python {
     echo -e "${RED}Local Python mode tests failed.${NC}"
   fi
   
+  echo "Ensuring all Python API servers are stopped..."
+  pkill -f "uvicorn src.backend.main:app" || true
+  
+  sleep 3
+  
   return $status
 }
 
@@ -88,16 +93,26 @@ function test_docker_compose {
     return 1
   fi
   
-  echo "Running Docker Compose test script..."
-  ./scripts/test-docker-compose.sh
+  DOCKER_PORT=8001
+  export TEST_PORT=${DOCKER_PORT}
+  
+  echo "Running Docker Compose test script with --keep-running flag..."
+  ./scripts/test-docker-compose.sh --keep-running --max-retries 5 --retry-delay 5
   local status=$?
   
   if [ $status -eq 0 ]; then
     echo -e "${GREEN}Docker Compose test script completed successfully.${NC}"
     
     echo "Running post-deployment tests against Docker Compose..."
-    run_tests "docker-compose" "http://localhost:${TEST_PORT}"
+    run_tests "docker-compose" "http://localhost:${DOCKER_PORT}"
     status=$?
+    
+    echo "Cleaning up Docker Compose services..."
+    docker-compose down
+    
+    if [ -f ".docker_compose_running" ]; then
+      rm .docker_compose_running
+    fi
   else
     echo -e "${RED}Docker Compose test script failed. Skipping post-deployment tests.${NC}"
   fi

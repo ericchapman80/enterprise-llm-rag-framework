@@ -7,12 +7,13 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "${TEST_PORT:-8001}:8000"
     environment:
       - CONFIG_PATH=/app/config/config.yaml
       - PYTHONPATH=/app
       - PYTHONUNBUFFERED=1
       - RAG_TEST_MODE=true
+      - RAG_INGESTION_THREADS=4
     volumes:
       - ./config:/app/config
       - ./data:/app/data
@@ -23,6 +24,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+    restart: unless-stopped
 
 networks:
   default:
