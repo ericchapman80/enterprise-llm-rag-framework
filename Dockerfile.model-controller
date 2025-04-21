@@ -8,8 +8,10 @@ RUN apt-get update && \
     curl \
     wget \
     git \
+    ca-certificates \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && update-ca-certificates
 
 # Copy requirements
 COPY src/backend/requirements.txt .

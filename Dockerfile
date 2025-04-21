@@ -7,12 +7,8 @@ WORKDIR /app
 # Copy requirements file
 COPY src/backend/requirements.txt .
 
-# Copy the Zscaler certificate into the Docker image 
-COPY zscaler.crt /usr/local/share/ca-certificates/zscaler.crt
-
-# Establish trust between the container and the Zscaler CA
+# Install necessary certificates
 RUN apt-get update && apt-get install -y ca-certificates && \
-    cat /usr/local/share/ca-certificates/zscaler.crt >> /etc/ssl/certs/ca-certificates.crt && \
     update-ca-certificates
 
 # Install dependencies
