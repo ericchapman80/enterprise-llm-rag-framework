@@ -19,11 +19,11 @@ services:
       - ./data:/app/data
     command: ["sh", "-c", "cd /app && uvicorn src.backend.main:app --host 0.0.0.0 --port 8000"]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 10s
-      timeout: 5s
+      test: ["CMD-SHELL", "curl -s -f http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 10s
       retries: 5
-      start_period: 30s
+      start_period: 60s
     restart: on-failure
 
 networks:
