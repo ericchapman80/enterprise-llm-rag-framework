@@ -1,0 +1,42 @@
+global:
+  environment: test
+  imageRegistry: ""
+
+backend:
+  replicaCount: 1
+  env:
+    - name: RAG_TEST_MODE
+      value: "true"
+  resources:
+    limits:
+      cpu: 500m
+      memory: 1Gi
+    requests:
+      cpu: 100m
+      memory: 512Mi
+  persistence:
+    enabled: true
+    size: 1Gi
+
+ollama:
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+    requests:
+      cpu: 100m
+      memory: 512Mi
+  persistence:
+    enabled: true
+    size: 2Gi
+
+slackBot:
+  enabled: false
+
+modelController:
+  enabled: false
+
+secrets:
+  create: true
+  values:
+    GITHUB_TOKEN: "test-token-for-testing"
