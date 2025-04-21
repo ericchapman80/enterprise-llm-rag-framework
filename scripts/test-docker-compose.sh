@@ -73,7 +73,7 @@ timeout 300 docker-compose -f ${COMPOSE_FILE} build || {
 }
 
 echo "Starting Docker Compose backend service..."
-docker-compose -f ${COMPOSE_FILE} up -d
+docker-compose -f ${COMPOSE_FILE} up -d --force-recreate
 
 echo "Waiting for service to start..."
 for i in $(seq 1 $MAX_RETRIES); do
