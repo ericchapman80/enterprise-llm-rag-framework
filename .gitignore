@@ -35,7 +35,6 @@ scripts/rag-llm-env/
 *.log
 logs/
 data/
-chroma_db/
 test-logs/
 test-reports/
 test-results/
@@ -72,3 +71,8 @@ kubeconfig
 # Temporary files
 tmp/
 temp/
+
+# Chroma vector store database files
+chroma.sqlite3
+chroma_db/
+*.sqlite3

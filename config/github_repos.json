@@ -1,12 +1,18 @@
 {
   "repositories": [
     {
-      "repo_url": "https://github.com/wwg-internal/productcore-launchpoint",
+      "repo_url": "https://github.com/owner/repo1",
       "branch": "main",
-      "file_extensions": [".md", ".py"],
-      "description": "Product Core LaunchPoint repository"
+      "file_extensions": [".md", ".py", ".js"],
+      "description": "Sample Repo 1"
+    },
+    {
+      "repo_url": "https://github.com/owner/repo2",
+      "branch": "main",
+      "file_extensions": [".md", ".py", ".js"],
+      "description": "Sample Repo 2"
     }
   ],
-  "auto_ingest_on_startup": false,
-  "last_updated": "2025-04-17T16:45:07Z"
+  "auto_ingest_on_startup": true,
+  "last_updated": "2025-04-15T05:34:35Z"
 }

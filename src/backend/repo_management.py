@@ -51,23 +51,27 @@ class UpdateReposResponse(BaseModel):
 def load_repository_config() -> RepositoryConfig:
     """
     Load the repository configuration from the config file.
-    
     Returns:
         The repository configuration
+    Raises:
+        HTTPException: If the config file is missing or cannot be parsed
     """
     try:
         if not os.path.exists(REPOS_CONFIG_PATH):
-            default_config = RepositoryConfig(repositories=[])
-            save_repository_config(default_config)
-            return default_config
-        
+            logger.error(f"Repository config file not found at: {REPOS_CONFIG_PATH}")
+            raise HTTPException(status_code=500, detail=f"Repository config file not found at: {REPOS_CONFIG_PATH}")
         with open(REPOS_CONFIG_PATH, "r") as f:
             config_data = json.load(f)
-        
-        return RepositoryConfig(**config_data)
+        try:
+            return RepositoryConfig(**config_data)
+        except Exception as e:
+            logger.error(f"Error parsing repository configuration: {str(e)}. Raw data: {config_data}")
+            raise HTTPException(status_code=500, detail=f"Error parsing repository configuration: {str(e)}")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error loading repository configuration: {str(e)}")
-        return RepositoryConfig(repositories=[])
+        raise HTTPException(status_code=500, detail=f"Error loading repository configuration: {str(e)}")
 
 def save_repository_config(config: RepositoryConfig) -> bool:
     """
@@ -217,142 +221,6 @@ async def list_repositories() -> RepositoryConfig:
         logger.error(f"Error listing repositories: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error listing repositories: {str(e)}")
 
-@router.get(
-    "/repos/config",
-    response_model=RepositoryConfig,
-    summary="Get repository configuration",
-    description="This endpoint returns the repository configuration, including the list of repositories and auto-ingest setting.",
-    response_description="The repository configuration"
-)
-async def get_repository_config() -> RepositoryConfig:
-    """
-    Get the repository configuration.
-    
-    Returns:
-        The repository configuration
-    """
-    return await list_repositories()
-
-@router.post(
-    "/update-repos",
-    response_model=UpdateReposResponse,
-    summary="Update GitHub repository list",
-    description="Update the list of GitHub repositories to be ingested by the RAG system. This endpoint allows adding, removing, or modifying repositories in the configuration file.",
-    response_description="Status of the repository update operation"
-)
-async def update_repos(
-    request: UpdateReposRequest
-) -> Dict[str, Any]:
-    """
-    Update the list of GitHub repositories to be ingested.
-    
-    Args:
-        request: The update request containing the repositories to add, remove, or modify
-        
-    Returns:
-        A dictionary containing the status of the operation and the updated repository list
-    """
-    try:
-        config = load_repository_config()
-        
-        config.repositories = request.repositories
-        
-        if request.auto_ingest_on_startup is not None:
-            config.auto_ingest_on_startup = request.auto_ingest_on_startup
-        
-        if not save_repository_config(config):
-            raise HTTPException(status_code=500, detail="Failed to save repository configuration")
-        
-        return {
-            "status": "success",
-            "message": f"Successfully updated repository configuration with {len(request.repositories)} repositories",
-            "repositories": config.repositories
-        }
-    except Exception as e:
-        logger.error(f"Error updating repository configuration: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error updating repository configuration: {str(e)}")
-
-@router.post(
-    "/repos/update-config",
-    response_model=UpdateReposResponse,
-    summary="Update repository configuration",
-    description="This endpoint updates the repository configuration with the provided repositories and settings.",
-    response_description="Status of the configuration update operation"
-)
-async def update_repository_config(request: UpdateReposRequest) -> Dict[str, Any]:
-    """
-    Update the repository configuration.
-    
-    Args:
-        request: The update request
-    """
-    return await update_repos(request)
-
-@router.post(
-    "/ingest/github",
-    summary="Ingest a GitHub repository into the RAG system",
-    description="This endpoint allows ingestion of a GitHub repository into the RAG system. The repository contents will be processed, embedded, and stored in the vector database for retrieval during queries.",
-    response_description="Status of the GitHub repository ingestion operation"
-)
-async def ingest_github_repository(
-    repo: Repository,
-    rag_engine: RAGEngine = Depends(get_rag_engine)
-) -> Dict[str, Any]:
-    """
-    Ingest a GitHub repository into the RAG system.
-    
-    Args:
-        repo: The repository to ingest
-        rag_engine: The RAG engine instance
-        
-    Returns:
-        A dictionary containing the ingestion results
-    """
-    if os.environ.get("RAG_TEST_MODE") == "true":
-        logger.info(f"🧪 Test mode: Simulating GitHub repository ingestion for: {repo.repo_url}")
-        
-        import random
-        doc_count = random.randint(5, 20)
-        
-        return {
-            "status": "success",
-            "message": f"Successfully simulated ingestion of GitHub repository: {repo.repo_url} in test mode",
-            "document_count": doc_count
-        }
-        
-    try:
-        if not repo.repo_url:
-            raise HTTPException(status_code=400, detail="Repository URL is required")
-        
-        github_token = os.environ.get("GITHUB_TOKEN")
-        
-        logger.info(f"Ingesting GitHub repository: {repo.repo_url}, branch: {repo.branch}")
-        
-        ingestion_manager = DataIngestionManager()
-        
-        try:
-            documents = ingestion_manager.ingest_github_repo(
-                repo_url=repo.repo_url,
-                branch=repo.branch,
-                github_token=github_token,
-                file_filter=repo.file_extensions
-            )
-            
-            rag_engine.add_documents(documents)
-            
-            return {
-                "status": "success", 
-                "message": f"Successfully ingested {len(documents)} documents from GitHub repository",
-                "document_count": len(documents)
-            }
-        except Exception as repo_error:
-            logger.error(f"Error ingesting GitHub repository: {repo_error}")
-            raise HTTPException(status_code=500, detail=f"Error ingesting GitHub repository: {str(repo_error)}")
-    
-    except Exception as e:
-        logger.error(f"Error processing GitHub ingestion request: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
 @router.post(
     "/repos/ingest-github",
     summary="Ingest a GitHub repository",
@@ -489,6 +357,40 @@ async def ingest_all_repositories(
     except Exception as e:
         logger.error(f"Error ingesting repositories: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error ingesting repositories: {str(e)}")
+
+@router.post(
+    "/repos/update-config",
+    response_model=UpdateReposResponse,
+    summary="Update repository configuration",
+    description="This endpoint updates the repository configuration with the provided repositories and settings.",
+    response_description="Status of the configuration update operation"
+)
+async def update_repository_config(request: UpdateReposRequest) -> Dict[str, Any]:
+    """
+    Update the repository configuration.
+    
+    Args:
+        request: The update request
+    """
+    try:
+        config = load_repository_config()
+        
+        config.repositories = request.repositories
+        
+        if request.auto_ingest_on_startup is not None:
+            config.auto_ingest_on_startup = request.auto_ingest_on_startup
+        
+        if not save_repository_config(config):
+            raise HTTPException(status_code=500, detail="Failed to save repository configuration")
+        
+        return {
+            "status": "success",
+            "message": f"Successfully updated repository configuration with {len(request.repositories)} repositories",
+            "repositories": config.repositories
+        }
+    except Exception as e:
+        logger.error(f"Error updating repository configuration: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error updating repository configuration: {str(e)}")
 
 async def ingest_repositories_on_startup(rag_engine: RAGEngine) -> None:
     """

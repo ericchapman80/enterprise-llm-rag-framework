@@ -98,23 +98,55 @@ document.addEventListener('DOMContentLoaded', function() {
     
     function createBotMessage(message, sources) {
         const template = botMessageTemplate.content.cloneNode(true);
-        const messageContent = template.querySelector('.message-content p');
-        
-        let formattedMessage = formatBotMessage(message);
-        
-        messageContent.innerHTML = formattedMessage;
-        
-        const sourcesList = template.querySelector('.sources ul');
+        template.querySelector('p').innerHTML = formatBotMessage(message);
+        const sourcesDiv = template.querySelector('.sources');
+        const sourcesList = sourcesDiv.querySelector('ul');
+        const sourcesHeader = sourcesDiv.querySelector('h4');
         if (sources && sources.length > 0) {
-            sources.forEach(source => {
+            // Replace the Sources: header with the toggle button
+            const toggleBtn = document.createElement('button');
+            toggleBtn.textContent = 'Show Sources';
+            toggleBtn.className = 'toggle-sources-btn';
+            let expanded = false;
+            sourcesList.style.display = 'none';
+            // Remove the static Sources: header
+            if (sourcesHeader) sourcesHeader.remove();
+            toggleBtn.addEventListener('click', () => {
+                expanded = !expanded;
+                sourcesList.style.display = expanded ? 'block' : 'none';
+                toggleBtn.textContent = expanded ? 'Hide Sources' : 'Show Sources';
+            });
+            sourcesDiv.insertBefore(toggleBtn, sourcesList);
+            // Add sources as list items (initially hidden)
+            sources.forEach((source, idx) => {
                 const li = document.createElement('li');
-                li.innerHTML = `📄 ${source.content.substring(0, 100)}...`;
+                li.innerHTML = `📄 <b>Source ${idx + 1}</b>: ${source.content.substring(0, 100)}...`;
+                // Optionally: add full source as expandable/collapsible text
+                if (source.content.length > 100) {
+                    const expandBtn = document.createElement('button');
+                    expandBtn.textContent = 'Expand';
+                    expandBtn.className = 'expand-source-btn';
+                    let expandedSource = false;
+                    const fullContent = document.createElement('div');
+                    fullContent.style.display = 'none';
+                    fullContent.style.marginTop = '0.5em';
+                    fullContent.style.background = '#f3f3f3';
+                    fullContent.style.padding = '0.5em';
+                    fullContent.style.borderRadius = '5px';
+                    fullContent.textContent = source.content;
+                    expandBtn.addEventListener('click', () => {
+                        expandedSource = !expandedSource;
+                        fullContent.style.display = expandedSource ? 'block' : 'none';
+                        expandBtn.textContent = expandedSource ? 'Collapse' : 'Expand';
+                    });
+                    li.appendChild(expandBtn);
+                    li.appendChild(fullContent);
+                }
                 sourcesList.appendChild(li);
             });
         } else {
-            template.querySelector('.sources').style.display = 'none';
+            sourcesDiv.style.display = 'none';
         }
-        
         setupFeedbackButtons(template);
         return template;
     }

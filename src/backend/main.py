@@ -243,43 +243,6 @@ async def query(request_data: QueryRequest):
         logger.error(f"Error processing query: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-class FeedbackRequest(BaseModel):
-    query_id: str
-    feedback: str
-    details: Optional[str] = None
-
-class FeedbackResponse(BaseModel):
-    status: str
-    message: str
-
-@app.post(
-    "/feedback",
-    response_model=FeedbackResponse,
-    summary="Submit feedback for a query",
-    description="This endpoint allows users to submit feedback on query responses. The feedback can be used to improve the system over time.",
-    response_description="Confirmation of feedback submission"
-)
-async def submit_feedback(feedback_data: FeedbackRequest):
-    """Submit feedback for a query"""
-    try:
-        query_id = feedback_data.query_id
-        feedback = feedback_data.feedback
-        
-        if not query_id or feedback is None:
-            raise HTTPException(status_code=400, detail="Query ID and feedback are required")
-        
-        if os.environ.get("RAG_TEST_MODE") == "true":
-            logger.info(f"Test mode: Received feedback for query {query_id}: {feedback}")
-            return {"status": "success", "message": "Feedback submitted successfully (test mode)"}
-        
-        # Store feedback (placeholder)
-        logger.info(f"Received feedback for query {query_id}: {feedback}")
-        
-        return {"status": "success", "message": "Feedback submitted successfully"}
-    except Exception as e:
-        logger.error(f"Error submitting feedback: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
 class IngestRequest(BaseModel):
     source_type: str
     source_data: str
@@ -289,84 +252,61 @@ class IngestResponse(BaseModel):
     status: str
     message: str
 
-@app.post(
-    "/ingest",
-    response_model=IngestResponse,
-    summary="Ingest data into the RAG system",
-    description="This endpoint allows ingestion of various data types into the RAG system. The data will be processed, embedded, and stored in the vector database for retrieval during queries.",
-    response_description="Confirmation of data ingestion initiation"
-)
-async def ingest_data(ingest_data: IngestRequest):
-    """Ingest data into the RAG system"""
-    if rag_engine is None:
-        raise HTTPException(status_code=500, detail="RAG engine not initialized")
-    
-    try:
-        source_type = ingest_data.source_type
-        source_data = ingest_data.source_data
-        
-        if not source_type or not source_data:
-            raise HTTPException(status_code=400, detail="Source type and data are required")
-        
-        if os.environ.get("RAG_TEST_MODE") == "true":
-            logger.info(f"Test mode: Simulating ingestion of data type {source_type}")
-            return {"status": "success", "message": "Data ingestion simulated in test mode"}
-        
-        # Placeholder for ingestion logic
-        logger.info(f"Ingesting data of type {source_type}")
-        
-        return {"status": "success", "message": "Data ingestion started"}
-    except Exception as e:
-        logger.error(f"Error ingesting data: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-class GitHubIngestRequest(BaseModel):
-    repo_url: str
-    branch: Optional[str] = "main"
-    file_extensions: Optional[List[str]] = [".md", ".py", ".js", ".txt"]
-
-class GitHubIngestResponse(BaseModel):
-    status: str
-    message: str
-    document_count: int
-
-# @app.post(
-#     "/ingest/github",
-#     response_model=GitHubIngestResponse,
-#     summary="Ingest a GitHub repository into the RAG system",
-#     description="This endpoint allows ingestion of GitHub repositories into the RAG system. The repository contents will be processed, embedded, and stored in the vector database for retrieval during queries.",
-#     response_description="Confirmation of GitHub repository ingestion with document count"
-# )
-# async def ingest_github_repo(github_data: GitHubIngestRequest):
-#     """Ingest a GitHub repository into the RAG system"""
-
 class IngestedDataResponse(BaseModel):
     status: str
     total_documents: int
     sources: Dict[str, int]
 
+class IngestedDocumentsResponse(BaseModel):
+    status: str
+    total_documents: int
+    documents: List[Dict[str, Any]]
+
+# --- Free-form Data Ingestion Endpoints (with /data/ prefix and Data Ingestion tag) ---
+@app.post(
+    "/data/ingest",
+    response_model=IngestResponse,
+    tags=["Data Ingestion"],
+    summary="Ingest free-form data into the RAG system",
+    description="This endpoint allows ingestion of free-form text or document data into the RAG system. The data will be processed, embedded, and stored in the vector database for retrieval during queries.",
+    response_description="Confirmation of data ingestion initiation"
+)
+async def ingest_data(ingest_data: IngestRequest):
+    if rag_engine is None:
+        raise HTTPException(status_code=500, detail="RAG engine not initialized")
+    try:
+        source_type = ingest_data.source_type
+        source_data = ingest_data.source_data
+        if not source_type or not source_data:
+            raise HTTPException(status_code=400, detail="Source type and data are required")
+        if os.environ.get("RAG_TEST_MODE") == "true":
+            logger.info(f"Test mode: Simulating ingestion of data type {source_type}")
+            return {"status": "success", "message": "Data ingestion simulated in test mode"}
+        logger.info(f"Ingesting data of type {source_type}")
+        return {"status": "success", "message": "Data ingestion started"}
+    except Exception as e:
+        logger.error(f"Error ingesting data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get(
-    "/ingested",
+    "/data/ingested",
     response_model=IngestedDataResponse,
+    tags=["Data Ingestion"],
     summary="List ingested data sources",
     description="This endpoint returns a summary of all ingested data sources in the RAG system, including the total number of documents and a breakdown by source.",
     response_description="Summary of ingested data sources"
 )
 async def list_ingested_data():
-    """List ingested data sources"""
     if rag_engine is None:
         raise HTTPException(status_code=500, detail="RAG engine not initialized")
-    
     try:
         documents = rag_engine.list_documents()
-        
         sources = {}
         for doc in documents:
             source = doc.metadata.get("source", "unknown")
             if source not in sources:
                 sources[source] = 0
             sources[source] += 1
-        
         return {
             "status": "success",
             "total_documents": len(documents),
@@ -376,28 +316,17 @@ async def list_ingested_data():
         logger.error(f"Error listing ingested data: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-class DocumentItem(BaseModel):
-    id: int
-    content: str
-    metadata: Dict[str, Any]
-
-class IngestedDocumentsResponse(BaseModel):
-    status: str
-    total_documents: int
-    documents: List[DocumentItem]
-
 @app.get(
-    "/ingested-data",
+    "/data/ingested-data",
     response_model=IngestedDocumentsResponse,
+    tags=["Data Ingestion"],
     summary="View all ingested documents with their content",
     description="This endpoint returns all ingested documents in the RAG system, including their content and metadata. The content is truncated for readability.",
     response_description="List of all ingested documents with content and metadata"
 )
 async def view_ingested_data():
-    """View all ingested documents with their content"""
     if rag_engine is None:
         raise HTTPException(status_code=500, detail="RAG engine not initialized")
-    
     try:
         if os.environ.get("RAG_TEST_MODE") == "true":
             logger.info("Test mode: Returning simulated ingested documents")
@@ -423,9 +352,7 @@ async def view_ingested_data():
                     }
                 ]
             }
-        
         documents = rag_engine.list_documents()
-        
         formatted_docs = []
         for i, doc in enumerate(documents):
             formatted_docs.append({
@@ -433,7 +360,6 @@ async def view_ingested_data():
                 "content": doc.page_content[:500] + "..." if len(doc.page_content) > 500 else doc.page_content,
                 "metadata": doc.metadata
             })
-        
         return {
             "status": "success",
             "total_documents": len(documents),
@@ -470,9 +396,6 @@ async def flush_database():
         logger.error(f"Error flushing vector database: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-from pydantic import BaseModel
-from typing import List, Dict, Optional
-
 class QueryComparisonRequest(BaseModel):
     query: str
     max_tokens: Optional[int] = None
@@ -491,9 +414,11 @@ class QueryComparisonResponse(BaseModel):
 @app.post(
     "/query-comparison",
     response_model=QueryComparisonResponse,
+    tags=["Core"],
     summary="Compare responses with and without RAG context",
     description="This endpoint returns both the RAG-enhanced response (with context from the vector database) and the standard LLM response (without additional context) for the same query. This is useful for evaluating the impact of RAG on response quality.",
-    response_description="A comparison of RAG-enhanced and standard LLM responses"
+    response_description="A comparison of RAG-enhanced and standard LLM responses",
+    include_in_schema=False
 )
 async def query_comparison(request_data: QueryComparisonRequest):
     """Compare responses with and without RAG context"""
@@ -528,7 +453,6 @@ async def query_comparison(request_data: QueryComparisonRequest):
         }
         
     try:
-        
         kwargs = {}
         if request_data.max_tokens is not None:
             kwargs["max_tokens"] = request_data.max_tokens
@@ -552,6 +476,18 @@ async def query_comparison(request_data: QueryComparisonRequest):
     except Exception as e:
         logger.error(f"Error comparing query responses: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post(
+    "/chat/query-comparison",
+    response_model=QueryComparisonResponse,
+    tags=["Chat"],
+    summary="Compare responses with and without RAG context (Chat)",
+    description="This endpoint returns both the RAG-enhanced response (with context from the vector database) and the standard LLM response (without additional context) for the same query. This is useful for evaluating the impact of RAG on response quality.",
+    response_description="A comparison of RAG-enhanced and standard LLM responses"
+)
+async def chat_query_comparison(request_data: QueryComparisonRequest):
+    """Compare responses with and without RAG context (Chat)"""
+    return await query_comparison(request_data)
 
 @app.on_event("startup")
 async def startup_event():

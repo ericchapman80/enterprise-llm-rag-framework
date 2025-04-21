@@ -251,8 +251,8 @@ class RAGEngine:
             if use_rag:
                 if llm_kwargs:
                     temp_llm = OllamaLLM(
-                        model=self.llm.model_name,
-                        base_url=self.llm.base_url,
+                        model=getattr(self.llm, 'model', None) or getattr(self.llm, 'model_name', None),
+                        base_url=getattr(self.llm, 'base_url', None),
                         **llm_kwargs
                     )
                     qa_chain = RetrievalQA.from_chain_type(
@@ -281,8 +281,8 @@ class RAGEngine:
             else:
                 if llm_kwargs:
                     temp_llm = OllamaLLM(
-                        model=self.llm.model_name,
-                        base_url=self.llm.base_url,
+                        model=getattr(self.llm, 'model', None) or getattr(self.llm, 'model_name', None),
+                        base_url=getattr(self.llm, 'base_url', None),
                         **llm_kwargs
                     )
                     response = temp_llm.invoke(query_text)
