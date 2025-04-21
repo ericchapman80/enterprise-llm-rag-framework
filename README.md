@@ -20,43 +20,68 @@ The solution is built on:
 ## Architecture
 
 ```mermaid
-graph TD
-    subgraph "Kubernetes Cluster"
-        subgraph "RAG-LLM Framework"
-            A[Ollama Service] --> |LLM API| B[RAG Backend]
-            B --> |Vector Store| C[(Vector Database)]
-            B --> |API| D[Ingress]
-            
-            E[Slack Bot] --> |Query/Response| B
-            
-            F[Data Sources] --> |Ingestion| B
-            F --> |GitHub Repos| B
-            F --> |Markdown Files| B
-            F --> |Free-form Text| B
-        end
-        
-        G[Secrets] --> B
-        G --> E
-        
-        H[ConfigMap] --> B
-        H --> E
-        H --> A
+graph LR
+    %% Main components with clear layout
+    A[Ollama Service] -->|LLM API| B[RAG Backend]
+    B -->|Vector Store| C[(Vector Database)]
+    
+    %% Data sources
+    subgraph "Data Sources"
+        F1[GitHub Repos]
+        F2[Markdown Files]
+        F3[Free-form Text]
     end
     
+    F1 -->|Ingestion| B
+    F2 -->|Ingestion| B
+    F3 -->|Ingestion| B
+    
+    %% Configuration
+    subgraph "Configuration"
+        G[Secrets]
+        H[ConfigMap]
+    end
+    
+    G -->|Auth| B
+    G -->|Auth| E
+    H -->|Config| B
+    H -->|Config| E
+    H -->|Config| A
+    
+    %% Integration points
+    subgraph "Integration Points"
+        D[Ingress]
+        E[Slack Bot]
+        M[Web UI]
+    end
+    
+    B -->|API| D
+    E -->|Query/Response| B
+    M -->|API| B
+    
+    %% External services with clear connections
     subgraph "External Services"
-        I[Slack Workspace] <--> |Events/Messages| E
-        J[Backstage Instance] <--> |Plugin API| D
-        K[GitHub] <--> |API| B
+        I[Slack Workspace]
+        J[Backstage Instance]
+        K[GitHub]
     end
     
-    L[User] --> I
-    L --> J
-    L --> |Direct API| D
+    I <-->|Events/Messages| E
+    J <-->|Plugin API| D
+    K <-->|API| B
     
+    %% User interactions
+    L[User] -->|Chat| I
+    L -->|Portal| J
+    L -->|Direct API| D
+    L -->|Web Browser| M
+    
+    %% Styling for better visibility
     style A fill:#f9f,stroke:#333,stroke-width:2px
     style B fill:#bbf,stroke:#333,stroke-width:2px
     style C fill:#bfb,stroke:#333,stroke-width:2px
     style E fill:#fbf,stroke:#333,stroke-width:2px
+    style M fill:#ffb,stroke:#333,stroke-width:2px
 ```
 
 For a more detailed architecture explanation, see the [Architecture Documentation](docs/architecture.md).
